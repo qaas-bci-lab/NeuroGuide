@@ -1,0 +1,10 @@
+numpy
+scipy
+nibabel
+SimpleITK
+PyQt6
+matplotlib
+pyvista
+pyvistaqt
+reportlab
+Pillow

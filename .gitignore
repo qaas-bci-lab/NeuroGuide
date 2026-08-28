@@ -1,0 +1,46 @@
+# Python 缓存
+__pycache__/
+*.pyc
+*.pyo
+
+# 打包产物
+build/
+dist/
+*.spec.bak
+
+# 日志
+build_log.txt
+
+# 文档（讲稿、问答、交接说明）
+*讲稿*
+*问答*
+*FAQ*
+*交接说明*
+*诊断与修改方案*
+*打包说明*
+*.bat
+*.pdf
+
+# 备份版本
+ver*/
+
+# 数据文件（过大，用户自行准备）
+
+# 配准输出
+registered/
+registered_debug/
+
+# 运行时生成
+patient_records.json
+
+# IDE
+.vscode/
+.idea/
+
+# Python 环境
+venv/
+.env
+
+# 代码备份
+code_revise_v2/
+doc/
