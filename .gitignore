@@ -25,6 +25,10 @@
 !/docs/使用说明_V4.5_医生版.txt
 !/docs/dicom_import.md
 !/docs/source_resources.md
+!/docs/screenshots/
+/docs/screenshots/*
+!/docs/screenshots/ti-workspace.png
+!/docs/screenshots/tes-workspace.png
 __pycache__/
 *.py[cod]
 *.pyd
