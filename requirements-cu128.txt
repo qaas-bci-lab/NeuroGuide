@@ -1,0 +1,9 @@
+# Optional CUDA 12.8 overlay for the separate build venv only.
+# Never install this file into the user's current conda environment.
+--extra-index-url https://download.pytorch.org/whl/cu128
+torch==2.7.1+cu128
+torchvision==0.22.1+cu128
+torchaudio==2.7.1+cu128
+sympy==1.14.0
+networkx==3.4.2
+monai==1.5.1

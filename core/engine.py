@@ -22,6 +22,7 @@ class NiiEngine:
         self.overlays = []
         self.display_min = None
         self.display_max = None
+        self.view = None
 
     def _to_3d_image(self, img):
         img = nib.as_closest_canonical(img)
@@ -145,19 +146,21 @@ class NiiEngine:
             self.data = data
             self.affine = img.affine
             self.overlays = []
+            from core.display_geometry import DisplayGrid
+            self.view = DisplayGrid(self.data, self.affine)
             self.display_min, self.display_max = self._calc_display_range(self.data)
             return True, self.data.shape
         except Exception as e:
             return False, f"{e}\n{traceback.format_exc()}"
 
-    def load_overlay(self, file_path):
+    def load_overlay(self, file_path, kind=None):
         try:
             if self.image is None or self.data is None:
                 return False, "Load base image first."
 
             raw_ov_img = nib.load(file_path)
             ov_img, ov_data = self._to_3d_image(raw_ov_img)
-            source_is_label_map = self._is_label_map(ov_data)
+            source_is_label_map = kind == 'atlas' or (kind != 'field' and self._is_label_map(ov_data))
             ov_data = self._resample_overlay_to_base(ov_img, ov_data, is_label_map=source_is_label_map)
             ov_data = np.nan_to_num(ov_data, nan=0.0, posinf=0.0, neginf=0.0)
 
@@ -167,10 +170,13 @@ class NiiEngine:
                 ov_max = float(np.nanmax(finite_data))
             else:
                 ov_min, ov_max = 0.0, 1.0
+            data_min, data_max = ov_min, ov_max
             if ov_max <= ov_min:
                 ov_max = ov_min + 1e-6
 
-            is_atlas = self._is_label_map(ov_data) or source_is_label_map
+            is_atlas = source_is_label_map
+            if not is_atlas:
+                ov_min, ov_max = 0.0, max(data_max, 1e-6)
             unique_vals = np.unique(ov_data) if is_atlas else np.array([])
 
             label_dict = {}
@@ -202,8 +208,13 @@ class NiiEngine:
                 "label_dict": label_dict,
                 "min": ov_min,
                 "max": ov_max,
-                "cmap": "tab20" if is_atlas else cmaps[idx % len(cmaps)],
-                "alpha": 0.4 if is_atlas else 0.7,
+                "data_min": data_min,
+                "data_max": data_max,
+                "display_min": ov_min if is_atlas else .05*ov_max,
+                "display_max": ov_max if is_atlas else .95*ov_max,
+                "units": '' if is_atlas else 'V/m',
+                "cmap": "tab20" if is_atlas else "jet",
+                "alpha": 1.0,
             }
             self.overlays.append(overlay_config)
             return True, len(self.overlays) - 1
@@ -216,12 +227,3 @@ class NiiEngine:
             return 0.0, 0.0, 0.0
         mni = self.affine @ np.array([x, y, z, 1])
         return tuple(mni[:3])
-
-    def mni_to_voxel(self, mni_x, mni_y, mni_z):
-        """将 MNI152 空间坐标反变换为体素坐标"""
-        if self.affine is None:
-            sh = self.data.shape
-            return sh[0] // 2, sh[1] // 2, sh[2] // 2
-        inv_affine = np.linalg.inv(self.affine)
-        voxel = inv_affine @ np.array([mni_x, mni_y, mni_z, 1])
-        return int(round(voxel[0])), int(round(voxel[1])), int(round(voxel[2]))

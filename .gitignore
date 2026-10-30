@@ -1,46 +1,55 @@
-# Python 缓存
+/BrainLFNet/
+/PPT/
+/dist/
+/build/
+/.venv/
+/.integration_backup/
+/.release_backup/
+/NeuroGuide/
+/individualized/
+/registered/
+/registered_debug/
+/restore/
+/sample_data/
+/mri/
+/logs/
+/patient_records.json
+/build_log.txt
+/assets/*
+!/assets/branding/
+/assets/branding/*
+!/assets/branding/neuroguide_mark.png
+!/assets/branding/version_info.txt
+/docs/*
+!/docs/使用说明_V4.5_医生版.txt
+!/docs/dicom_import.md
+!/docs/source_resources.md
 __pycache__/
-*.pyc
-*.pyo
-
-# 打包产物
-build/
-dist/
-*.spec.bak
-
-# 日志
-build_log.txt
-
-# 文档（讲稿、问答、交接说明）
-*讲稿*
-*问答*
-*FAQ*
-*交接说明*
-*诊断与修改方案*
-*打包说明*
-*.bat
+*.py[cod]
+*.pyd
+*.exe
+*.dll
+*.obj
+*.lib
+*.exp
+*.pdb
+*.nii
+*.nii.gz
+*.dcm
+*.pt
+*.pth
+*.npy
+*.npz
+*.zip
+*.7z
 *.pdf
-
-# 备份版本
-ver*/
-
-# 数据文件（过大，用户自行准备）
-
-# 配准输出
-registered/
-registered_debug/
-
-# 运行时生成
-patient_records.json
-
-# IDE
-.vscode/
-.idea/
-
-# Python 环境
-venv/
+*.log
+*.ready
+*.tmp
 .env
-
-# 代码备份
-code_revise_v2/
-doc/
+.env.*
+.idea/
+.vscode/
+/.agents/
+/.codex/
+/.aws/

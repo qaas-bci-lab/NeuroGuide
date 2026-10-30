@@ -1,0 +1,2 @@
+# Install only into a separate build environment.
+Cython==3.1.6
