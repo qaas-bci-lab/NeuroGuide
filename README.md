@@ -21,13 +21,13 @@ NeuroGuide 面向医生和研究人员，用于根据个体 T1 MRI 建立头部�
 
 在同一工作区查看三方向 MRI、电场叠加和 2.5D 切面，结合右侧的电极、电流及靶区统计比较方案。
 
-![NeuroGuide TI 方案与个体电场显示](docs/screenshots/ti-workspace.png)
+![NeuroGuide TI 方案与个体电场显示](docs/screenshots/ti-workspace-v4.5.png)
 
 ### tES 多电极方案
 
 逐电极设置电流，并查看对应的电场分布与靶区结果。
 
-![NeuroGuide tES 多电极方案与电场显示](docs/screenshots/tes-workspace.png)
+![NeuroGuide tES 多电极方案与电场显示](docs/screenshots/tes-workspace-v4.5.png)
 
 *截图用于展示软件功能，图中的电极、电流和统计值为示例方案。*
 

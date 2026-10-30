@@ -27,8 +27,8 @@
 !/docs/source_resources.md
 !/docs/screenshots/
 /docs/screenshots/*
-!/docs/screenshots/ti-workspace.png
-!/docs/screenshots/tes-workspace.png
+!/docs/screenshots/ti-workspace-v4.5.png
+!/docs/screenshots/tes-workspace-v4.5.png
 __pycache__/
 *.py[cod]
 *.pyd
