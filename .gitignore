@@ -1,4 +1,5 @@
-/BrainLFNet/
+/BrainLFNet/*
+!/BrainLFNet/README.md
 /PPT/
 /dist/
 /build/
