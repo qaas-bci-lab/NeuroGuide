@@ -1,4 +1,4 @@
-"""Validate the actual V4.5 executables with Python/Conda removed from PATH."""
+"""Validate the packaged executables with Python/Conda removed from PATH."""
 from __future__ import annotations
 import argparse
 from datetime import datetime, timezone, timedelta
@@ -13,6 +13,8 @@ import nibabel as nib
 import numpy as np
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+from tools.build_protected import RELEASE, STAGE, VERSION
 
 
 def compare_predictions(baseline_path, current_path, require_identical_grid=False, max_relative_l2=.01):
@@ -63,8 +65,8 @@ def compare_predictions(baseline_path, current_path, require_identical_grid=Fals
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--distribution', type=Path, default=ROOT / 'dist/NeuroGuide-V4.5')
-    parser.add_argument('--output', type=Path, default=ROOT / 'build/protected_V4_5/validation')
+    parser.add_argument('--distribution', type=Path, default=ROOT / 'dist' / RELEASE)
+    parser.add_argument('--output', type=Path, default=STAGE / 'validation')
     parser.add_argument('--t1', type=Path, default=ROOT / 'mri/T1.nii')
     parser.add_argument('--baseline-prediction', type=Path)
     parser.add_argument('--smoke-only', action='store_true')
@@ -79,7 +81,7 @@ def main():
         record = json.loads((out / 'validation.json').read_text(encoding='utf-8'))
         assert Path(record['distribution']).resolve() == dist
         for key in ('console_startup', 'gui_startup', 'all_71_columns_finite', 'compiled_cache_reuse',
-                    'ti_result', 'tes_result', 'ti_gui_report', 'tes_gui_report'):
+                    'ti_result', 'tes_result', 'ti_gui_report', 'tes_gui_report', 'atlas_checks', 'morel_gui_report'):
             assert record.get(key), 'Missing completed check: ' + key
         assert args.baseline_prediction is not None
         current = Path(record['prediction_task']['prediction_dir']) / 'BrainLFNet_prediction.json'
@@ -95,7 +97,7 @@ def main():
                 require_identical_grid=True, max_relative_l2=1e-6)
         record['validation_complete'] = True
         (out / 'validation.json').write_text(json.dumps(record, ensure_ascii=False, indent=2), encoding='utf-8')
-        print('V4.5 STANDALONE ACCEPTANCE COMPLETE', out / 'validation.json', flush=True)
+        print(RELEASE, 'STANDALONE ACCEPTANCE COMPLETE', out / 'validation.json', flush=True)
         return
     env = os.environ.copy()
     for key in ('PYTHONPATH', 'PYTHONHOME', 'VIRTUAL_ENV', 'CONDA_PREFIX', 'CONDA_DEFAULT_ENV',
@@ -112,8 +114,8 @@ def main():
         env[key] = str(out / folder)
         Path(env[key]).mkdir(parents=True, exist_ok=True)
     worker = dist / 'NeuroGuideWorker.exe'
-    gui = dist / 'NeuroGuide-V4.5.exe'
-    record = {'version': '4.5', 'created_at': datetime.now(timezone(timedelta(hours=8))).isoformat(),
+    gui = dist / (RELEASE + '.exe')
+    record = {'version': VERSION, 'created_at': datetime.now(timezone(timedelta(hours=8))).isoformat(),
               'distribution': str(dist), 'clean_path': env['PATH']}
     def save():
         (out / 'validation.json').write_text(json.dumps(record, ensure_ascii=False, indent=2), encoding='utf-8')
@@ -163,13 +165,15 @@ def main():
         assert ready.read_text() == 'ready'
         if result_path:
             check = json.loads((out / (name + '_check.json')).read_text(encoding='utf-8'))
-            assert check['version'] == '4.5'
+            assert check['version'] == VERSION
             for key in ('report_success', 'gui_loaded', 'display_3d_grid_verified',
                         'physical_drag_verified', 'camera_reset_preserves_planes_verified', 'roi_clip_verified'):
                 assert check[key], key
             import pymupdf
             with pymupdf.open(config['report']) as pdf:
                 assert len(pdf) == 1 and len(pdf[0].get_images()) == 3
+                if name == 'morel_gui':
+                    assert '10.3174/ajnr.A3140' in pdf[0].get_text()
             return check
         return True
 
@@ -206,6 +210,34 @@ def main():
     assert inspect['task'] is not None
     record['compiled_cache_reuse'] = True
     save()
+    atlas_config = {'action': 'atlas', 'task_dir': result['task_dir'],
+                    'padded_t1': result['padded_t1'], 'tissue_masks': result['tissue_masks'],
+                    'atlas_resources': str(dist / '_internal/assets/atlases')}
+    aal3 = job('aal3_registration', dict(atlas_config, atlas_id='aal3'))
+    morel = job('morel_registration', dict(atlas_config, atlas_id='morel'))
+    cached_morel = job('morel_cache_reuse', dict(atlas_config, atlas_id='morel'))
+    assert cached_morel['fingerprint'] == morel['fingerprint']
+    assert '复用已完成的 Morel' in (out / 'morel_cache_reuse.log').read_text(encoding='utf-8')
+    atlases = json.loads(Path(result['manifest']).read_text(encoding='utf-8'))['atlases']
+    assert atlases['aal3']['fingerprint'] == aal3['fingerprint']
+    assert atlases['morel']['fingerprint'] == morel['fingerprint']
+    stn_ids = [int(k) for k, name in morel['labels'].items() if name in ('STN_L', 'STN_R')]
+    assert len(stn_ids) == 2
+    morel_image = nib.load(morel['atlas_path'])
+    assert morel_image.shape == image.shape
+    np.testing.assert_allclose(morel_image.affine, image.affine, atol=1e-4)
+    voxels = np.asarray(morel_image.dataobj)
+    centers = {}
+    for k in stn_ids:
+        codes = morel['voxel_labels'][str(k)]
+        points = np.argwhere(np.isin(voxels, codes))
+        assert len(points) == morel['native_counts'][str(k)]
+        assert len(points) >= morel['gmwm_counts'][str(k)] > 0
+        centers[morel['labels'][str(k)]] = nib.affines.apply_affine(image.affine, points.mean(axis=0)).tolist()
+    assert centers['STN_L'][0] < centers['STN_R'][0]
+    record['atlas_checks'] = {'aal3': aal3['quality'], 'morel': morel['quality'],
+                              'morel_cache_reused': True, 'stn_centers_ras_mm': centers}
+    save()
     with np.load(metadata['geometry']) as geometry:
         ijk = geometry['valid_ijk'].copy()
     center = ijk[np.argmin(np.square(ijk - ijk.mean(axis=0)).sum(axis=1))]
@@ -222,12 +254,22 @@ def main():
         record[mode + '_result'] = optimized
         record[mode + '_gui_report'] = gui_check(mode + '_gui', optimized['result_path'])
         save()
+    morel_roi = {'mask': morel['atlas_path'], 'region_ids': stn_ids, 'atlas_id': 'morel',
+                 'atlas_version': morel['atlas_version'],
+                 'region_names': [morel['labels'][str(k)] for k in stn_ids],
+                 'labels': sorted({code for k in stn_ids for code in morel['voxel_labels'][str(k)]})}
+    morel_field = job('morel_stn_field', {'action': 'synthesize', 'prediction_dir': result['prediction_dir'],
+                      'output_dir': str(out / 'morel'), 'roi': morel_roi, 'pairs': record['ti_result']['pairs'],
+                      'currents': record['ti_result']['currents_peak_ma']})
+    assert morel_field['statistics']['roi']['voxels'] == sum(morel['gmwm_counts'][str(k)] for k in stn_ids)
+    record['morel_stn_roi'] = morel_field['statistics']['roi']
+    record['morel_gui_report'] = gui_check('morel_gui', morel_field['result_path'])
     if args.baseline_prediction:
         record['baseline_comparison'] = compare_predictions(
             args.baseline_prediction, Path(result['prediction_dir']) / 'BrainLFNet_prediction.json')
     record['validation_complete'] = True
     save()
-    print('V4.5 STANDALONE ACCEPTANCE COMPLETE', out / 'validation.json', flush=True)
+    print(RELEASE, 'STANDALONE ACCEPTANCE COMPLETE', out / 'validation.json', flush=True)
 
 
 if __name__ == '__main__':

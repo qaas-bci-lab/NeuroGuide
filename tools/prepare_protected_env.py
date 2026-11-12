@@ -13,7 +13,7 @@ import sys
 def main():
     root = Path(__file__).resolve().parents[1]
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--stage', type=Path, default=root / 'build/protected_V4_5')
+    parser.add_argument('--stage', type=Path, default=root / 'build/protected_V4_6')
     args = parser.parse_args()
     stage = args.stage.resolve()
     target = stage / 'venv'

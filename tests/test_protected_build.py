@@ -40,7 +40,7 @@ class ProtectedBuildTests(unittest.TestCase):
         binary = internal / 'core/recipe.cp310-win_amd64.pyd'
         binary.parent.mkdir(parents=True)
         binary.write_bytes(b'fixture native module')
-        manifest = {'modules': [{'module': 'core.recipe', 'binary': 'core/recipe.cp310-win_amd64.pyd',
+        manifest = {'version': build.VERSION, 'modules': [{'module': 'core.recipe', 'binary': 'core/recipe.cp310-win_amd64.pyd',
                                   'binary_sha256': hashlib.sha256(binary.read_bytes()).hexdigest()}]}
         archive = SimpleNamespace(toc={'PYZ.pyz': (0, 'z')},
                                   open_embedded_archive=lambda _: SimpleNamespace(toc=bytecode or {}))

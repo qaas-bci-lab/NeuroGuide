@@ -9,13 +9,13 @@ from PyInstaller.utils.hooks import collect_submodules, collect_all, copy_metada
 from PyInstaller.config import CONF
 
 root = Path(SPECPATH)
-release_name = os.environ.get('NEUROGUIDE_RELEASE_NAME', 'NeuroGuide-V4.5')
+release_name = os.environ.get('NEUROGUIDE_RELEASE_NAME', 'NeuroGuide-V4.6')
 if Path(release_name).name != release_name or '/' in release_name or '\\' in release_name or release_name in {'.', '..'}:
     raise ValueError('Invalid NeuroGuide release name')
 brain = root / 'BrainLFNet'
 protected = os.environ.get('NEUROGUIDE_PROTECTED_ROOT')
-if release_name.startswith('NeuroGuide-V4.5') and not protected:
-    raise RuntimeError('V4.5 requires the protected build: python tools/build_protected.py')
+if release_name.startswith(('NeuroGuide-V4.5', 'NeuroGuide-V4.6')) and not protected:
+    raise RuntimeError('Run the protected build with python tools/build_protected.py')
 code_root = Path(protected).resolve() if protected else root
 protection = json.loads((code_root / 'protection_manifest.json').read_text(encoding='utf-8')) if protected else None
 sys.path.insert(0, str(code_root))
@@ -23,6 +23,7 @@ sys.path.insert(0, str(code_root))
 datas = [(str(root / 'mri'), 'mri'),
          (str(root / 'assets/dcm2niix'), 'assets/dcm2niix'),
          (str(root / 'assets/atlases'), 'assets/atlases'),
+         (str(root / 'assets/branding/combo_arrow.svg'), 'assets/branding'),
          (str(root / 'assets/branding/neuroguide_mark.png'), 'assets/branding'),
          (str(root / 'assets/branding/SELECTED_LOGO.md'), 'assets/branding')]
 
@@ -72,6 +73,10 @@ entry = code_root / 'launcher.py' if protected else root / 'main.py'
 a = Analysis([str(entry)], pathex=[str(code_root), str(code_root / 'BrainLFNet')], binaries=ants_binaries+mkl_binaries, datas=datas,
              hiddenimports=hidden, hookspath=[], hooksconfig={}, runtime_hooks=[str(root / 'tools/frozen_runtime.py')],
              excludes=['PyQt5'], noarchive=False, optimize=0)
+# Qt6Core uses Windows' ICU entry points. An ICU picked up from another
+# program on PATH can shadow the system DLL with versioned, incompatible exports.
+a.binaries = [entry for entry in a.binaries
+              if entry[0].casefold() not in {'icuuc.dll', 'icudt78.dll'}]
 if protected:
     protected_names = {item['module'] for item in protection['modules']}
     private_packages = ('core', 'ui', 'tools', 'brainlfnet', 'SegandElec', 'SegandElec_nnUNet')

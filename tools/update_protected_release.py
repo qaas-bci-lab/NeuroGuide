@@ -9,8 +9,10 @@ import zipfile
 import zlib
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from tools.build_protected import ROOT, RELEASE, audit_distribution, digest
+from tools.build_protected import ROOT, audit_distribution, digest
 from tools.update_release_manual import replace_members
+
+RELEASE = 'NeuroGuide-V4.5'
 
 
 def crc(path):

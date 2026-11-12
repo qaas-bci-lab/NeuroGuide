@@ -1,5 +1,4 @@
-/BrainLFNet/*
-!/BrainLFNet/README.md
+/BrainLFNet/
 /PPT/
 /dist/
 /build/
@@ -21,8 +20,10 @@
 /assets/branding/*
 !/assets/branding/neuroguide_mark.png
 !/assets/branding/version_info.txt
+!/assets/branding/combo_arrow.svg
 /docs/*
 !/docs/使用说明_V4.5_医生版.txt
+!/docs/使用说明_V4.6_医生版.txt
 !/docs/dicom_import.md
 !/docs/source_resources.md
 !/docs/screenshots/

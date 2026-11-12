@@ -4,9 +4,9 @@
 
 | 路径 | 用途 | 公开仓库状态 |
 | --- | --- | --- |
-| `BrainLFNet/` | 分割、预处理、电极处理、导联场模型及权重 | 论文尚未发表，暂不公开；安装依赖不能替代此目录 |
+| `BrainLFNet/` | 分割、预处理、电极处理、导联场模型及权重 | Git 忽略整个目录，完整运行需要在本地配置 |
 | `mri/T1.nii` | 分发版内置参考 MRI | 不上传影像数据；来源、适用性与使用授权需自行核对 |
-| `assets/atlases/` | AAL3 图谱、标签表及配准参考模板 | 不上传运行资源；使用时须保留上游许可与来源信息 |
+| `assets/atlases/` | AAL3、Morel 图谱及配准参考模板 | 本地配置，使用时须保留上游许可与来源信息 |
 | `assets/dcm2niix/` | DICOM 转换可执行文件及许可 | 不上传二进制；构建或源码使用前需取得 Windows x64 版本 |
 
 ## DICOM 转换工具
@@ -18,6 +18,8 @@
 ## 图谱与模板
 
 AAL3 来源：[GIN-IMN](https://www.gin.cnrs.fr/en/tools/aal/)。当前流程使用 AAL3v2 发布包中的 AAL3v1 1 mm 图谱、XML 及派生标签 JSON；SPM canonical 单被试 T1 用于配准参考。文件布局与元数据格式见 `core/atlas.py`，不能以不同编号或空间的文件直接替换。
+
+Morel 使用 [作者发布的 MNI152 体积版 1.0](https://zenodo.org/records/13918589) 和发布包内配套的 1 mm T1，脑掩模取自 [TemplateFlow MNI152NLin6Asym](https://github.com/templateflow/tpl-MNI152NLin6Asym)。使用 `python tools/prepare_morel.py MorelAtlasMNI152.zip tpl-MNI152NLin6Asym_res-01_desc-brain_mask.nii.gz` 可生成软件读取的标签图、对照表和模板脑掩模。图谱数据采用 CC BY-NC-SA 4.0，脚本会同时保留上游署名与许可说明 `Morel_upstream_readme.txt`。
 
 第三方资源保留各自许可。本仓库公开不改变第三方资源或未公开 BrainLFNet 的授权状态。
 

@@ -934,7 +934,7 @@ class ZjuMriViewer(QMainWindow):
         self.individual_dialog.show()
 
     def on_individual_atlas_ready(self, record):
-        self.statusBar().showMessage("AAL3 已映射到个体 MRI，可搜索并选择脑区。",5000)
+        self.statusBar().showMessage(f"{record['display_name']} 已映射到个体 MRI，可搜索并选择脑区。",5000)
 
     def current_cursor_ras(self):
         return self.engine.view.voxel_to_native_ras([self.sliders[a].value() for a in ('X','Y','Z')])
@@ -1002,7 +1002,10 @@ class ZjuMriViewer(QMainWindow):
         self.update_2d_views();self.update_3d_view()
 
     def preview_atlas_regions(self,record,labels):
-        self.set_target_roi({'mask':record['atlas_path'],'labels':list(labels)},'靶区轮廓 · AAL3')
+        from core.atlas import atlas_voxel_labels
+
+        self.set_target_roi({'mask':record['atlas_path'], 'labels':atlas_voxel_labels(record, labels)},
+                            f"靶区轮廓 · {record['display_name']}")
         if not labels:return
         target=next((ov for ov in reversed(self.engine.overlays) if ov.get('is_roi')),None)
         if target is None:return
@@ -1388,7 +1391,7 @@ def main():
         ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID('NeuroGuide.Desktop')
     app = QApplication(sys.argv)
     app.setApplicationName('NeuroGuide')
-    app.setApplicationVersion('4.5')
+    app.setApplicationVersion('4.6')
     ex = ZjuMriViewer()
     startup_check = "--startup-check" in sys.argv
     if startup_check:

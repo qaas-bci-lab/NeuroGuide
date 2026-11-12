@@ -47,7 +47,7 @@ def completed_task(path, manifest, t1):
     return {'task_dir': str(path.parent), 'manifest': str(path), 't1': str(t1),
             'padded_t1': str(padded), 'tissue_masks': str(tissue),
             'prediction_dir': str(prediction), 'electrodes': electrodes,
-            'atlas': manifest.get('atlases', {}).get('aal3'), 'timings':manifest.get('timings',prepared.get('timings',{}))}
+            'atlases': manifest.get('atlases', {}), 'timings':manifest.get('timings',prepared.get('timings',{}))}
 
 
 def find_reusable_task(config, progress=lambda _: None):

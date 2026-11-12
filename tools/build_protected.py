@@ -1,4 +1,4 @@
-"""Compile private modules, freeze V4.5, and audit both executables.
+"""Compile private modules, freeze NeuroGuide, and audit both executables.
 
 Run with the project's CUDA-compatible build interpreter. Cython and MSVC are
 build dependencies only; the distribution does not need either of them.
@@ -18,7 +18,10 @@ import sys
 import time
 
 ROOT = Path(__file__).resolve().parents[1]
-RELEASE = 'NeuroGuide-V4.5'
+VERSION = '4.6'
+RELEASE = f'NeuroGuide-V{VERSION}'
+VERSION_TAG = 'V' + VERSION.replace('.', '_')
+STAGE = ROOT / 'build' / ('protected_' + VERSION_TAG)
 PRIVATE_PACKAGES = ('core', 'ui', 'tools', 'brainlfnet', 'SegandElec', 'SegandElec_nnUNet')
 BRAIN_PACKAGES = ('brainlfnet', 'SegandElec', 'SegandElec_nnUNet')
 RUNTIME_TOOLS = ('__init__.py', 'individual_worker.py', 'report_page.py',
@@ -91,7 +94,7 @@ def compile_modules(stage, jobs):
     Options.docstrings = False
     Options.emit_code_comments = False
     started = time.perf_counter()
-    setup(name='neuroguide-private-runtime', version='4.5.0',
+    setup(name='neuroguide-private-runtime', version=VERSION + '.0',
           script_args=['build_ext', '--build-lib', str(native_dir),
                        '--build-temp', str(stage / 'objects'), '--parallel', str(jobs)],
           ext_modules=cythonize(extensions, build_dir=str(stage / 'generated_c'),
@@ -120,7 +123,7 @@ def compile_modules(stage, jobs):
                         'binary_sha256': digest(binaries[0])})
     (native_dir / 'launcher.py').write_text(
         'from neuroguide_app import main\n\nif __name__ == "__main__":\n    main()\n', encoding='utf-8')
-    manifest = {'version': '4.5', 'python': sys.version, 'interpreter': sys.executable,
+    manifest = {'version': VERSION, 'python': sys.version, 'interpreter': sys.executable,
                 'cython': __import__('Cython').__version__, 'modules': records,
                 'hiddenimports': imports_from_sources(sources),
                 'compilation_seconds': round(time.perf_counter() - started, 2)}
@@ -178,7 +181,8 @@ def audit_distribution(distribution, manifest):
     for path in internal.iterdir():
         if path.stem.split('.')[0] in {'main', 'neuroguide_app'} and path.suffix.lower() in {'.py', '.pyc', '.pyx', '.c', '.cpp', '.pdb'}:
             errors.append('Private application source: ' + path.name)
-    for filename in (RELEASE + '.exe', 'NeuroGuideWorker.exe'):
+    version = manifest['version']
+    for filename in (f'NeuroGuide-V{version}.exe', 'NeuroGuideWorker.exe'):
         archive = CArchiveReader(str(distribution / filename))
         if modules.intersection(archive.toc):
             errors.append(filename + ': private code in executable script entries')
@@ -193,7 +197,7 @@ def audit_distribution(distribution, manifest):
                     errors.append(filename + ': private bytecode in PYZ: ' + ', '.join(sorted(leaks)))
         if pyz_count != 1:
             errors.append(filename + ': expected exactly one inspectable PYZ archive')
-    report = {'version': '4.5', 'distribution': str(distribution),
+    report = {'version': version, 'distribution': str(distribution),
               'native_modules_verified': len(checked), 'modules': checked,
               'private_sources_absent': not errors, 'errors': errors,
               'protection': 'Cython native compilation; not encryption or absolute reverse-engineering prevention',
@@ -205,7 +209,7 @@ def audit_distribution(distribution, manifest):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--stage', type=Path, default=ROOT / 'build/protected_V4_5')
+    parser.add_argument('--stage', type=Path, default=STAGE)
     parser.add_argument('--distpath', type=Path, default=ROOT / 'dist')
     parser.add_argument('--jobs', type=int, default=4)
     parser.add_argument('--compile-only', action='store_true')
@@ -228,6 +232,8 @@ def main():
         print('NATIVE MODULES READY', native, flush=True)
         return
     manifest = json.loads((native / 'protection_manifest.json').read_text(encoding='utf-8'))
+    if manifest['version'] != VERSION:
+        raise RuntimeError('Native build version differs from the release version.')
     if {item['source'] for item in manifest['modules']} != {source.relative_to(ROOT).as_posix() for source, _ in selected_sources()}:
         raise RuntimeError('Runtime module selection changed; recompile before freezing.')
     for item in manifest['modules']:

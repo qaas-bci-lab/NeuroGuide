@@ -11,7 +11,7 @@ import unittest
 def main():
     root = Path(__file__).resolve().parents[1]
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--native', type=Path, default=root / 'build/protected_V4_5/native')
+    parser.add_argument('--native', type=Path, default=root / 'build/protected_V4_6/native')
     args = parser.parse_args()
     native = args.native.resolve()
     sys.path.insert(0, str(native))

@@ -471,4 +471,5 @@ def run_pipeline(config, progress=print, timing=None):
         save_json(manifest_path, manifest)
     return {'task_dir':str(task), 'manifest':str(manifest_path), 't1':manifest['t1'],
             'padded_t1':prepared['padded_t1'], 'tissue_masks':prepared['tissue_masks'],
-            'prediction_dir':str(prediction), 'electrodes':prepared, 'timings':manifest.get('timings',prepared.get('timings',{}))}
+            'prediction_dir':str(prediction), 'electrodes':prepared, 'atlases':manifest.get('atlases',{}),
+            'timings':manifest.get('timings',prepared.get('timings',{}))}

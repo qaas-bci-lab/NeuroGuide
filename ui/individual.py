@@ -11,6 +11,7 @@ from PyQt6.QtCore import QProcess, Qt, pyqtSignal, QTimer
 from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QFormLayout, QLabel, QLineEdit,
     QPushButton, QFileDialog, QComboBox, QDoubleSpinBox, QSpinBox, QTabWidget, QWidget,
     QPlainTextEdit, QMessageBox, QScrollArea, QFrame, QToolButton, QProgressBar, QListWidget, QListWidgetItem, QSizePolicy, QStackedWidget)
+from core.atlas import ATLAS_NAMES, atlas_voxel_labels, region_name
 
 def app_root():
     return Path(sys.executable).resolve().parent if getattr(sys, 'frozen', False) else Path(__file__).resolve().parents[1]
@@ -104,6 +105,7 @@ class IndividualPanel(QWidget):
         self.process = None; self._result = self._error = None; self._buffer = ''; self._cancelled = False; self._log_stream = None
         self.task = None; self.selection_mode = False; self.target_selected = False
         self.atlas_record = None; self.atlas_resources = atlas_root()
+        self.atlas_selections = {}
         from ui.theme import PANEL_STYLE
         self.setStyleSheet(PANEL_STYLE)
         layout = QVBoxLayout(self); layout.setContentsMargins(0, 0, 0, 0); layout.setSpacing(6)
@@ -124,7 +126,7 @@ class IndividualPanel(QWidget):
         self.details=owner.run_details; self.log=owner.run_log; self.cancel_button=owner.cancel_worker_button
         self.cancel_button.clicked.connect(self.cancel)
         self.status.setText('先选择一张 MRI，即可开始。')
-        self.populate_regions(); self.roi_mode.setCurrentIndex(1)
+        self.roi_mode.setCurrentIndex(self.roi_mode.findData('aal3'))
         self.update_roi_mode(); self.update_stimulation_mode(); self.update_current_preview(); self.set_busy(False)
 
     @staticmethod
@@ -186,7 +188,10 @@ class IndividualPanel(QWidget):
         self.optimization_target_host=QVBoxLayout();layout.addLayout(self.optimization_target_host)
         self.optimization_target_host.addWidget(self.shared_target_controls)
         card, body = self.card('选择靶区')
-        self.roi_mode = QComboBox(); self.roi_mode.addItems(['在 MRI 上点选','按 AAL3 脑区选择'])
+        self.roi_mode = QComboBox()
+        self.roi_mode.addItem('在 MRI 上点选')
+        for atlas_id, name in ATLAS_NAMES.items():
+            self.roi_mode.addItem(f'按 {name} 脑区选择', atlas_id)
         roi_actions=QHBoxLayout();roi_actions.addWidget(self.roi_mode,1)
         self.locate_button=QPushButton('定位靶区');self.locate_button.setToolTip('将三个切片定位到靶区中心。');self.locate_button.clicked.connect(self.locate_target)
         roi_actions.addWidget(self.locate_button);body.addLayout(roi_actions)
@@ -220,6 +225,7 @@ class IndividualPanel(QWidget):
         self.advanced = Collapsible('高级设置 · 电流上限与搜索参数',overlay=True)
         form = QFormLayout(self.advanced.body); self.advanced_form=form; form.setContentsMargins(12, 8, 12, 8); form.setSpacing(10)
         self.roi_mode.currentIndexChanged.connect(self.update_roi_mode)
+        self.roi_mode.currentIndexChanged.connect(self.region_search.clear)
         self.goal = QComboBox(); self.goal.addItems(['优先集中在目标区域', '优先提高目标区域场强']); self.goal.setCurrentIndex(1); form.addRow('优化方向', self.goal)
         self.cap = self.number(.1, 20, 2, ' mA'); form.addRow('每通道峰值上限', self.cap)
         self.cap.valueChanged.connect(self.sync_current_limit)
@@ -290,7 +296,8 @@ class IndividualPanel(QWidget):
         if not self.task or not self.task.get('padded_t1') or Path(self.owner.current_base_path or '').resolve()!=Path(self.task['padded_t1']).resolve():return
         try:roi=self.roi_spec()
         except ValueError:roi=None
-        self.owner.set_target_roi(roi)
+        name = ATLAS_NAMES.get((roi or {}).get('atlas_id'))
+        self.owner.set_target_roi(roi, f'靶区轮廓 · {name}' if name else '靶区轮廓')
 
     def sync_current_limit(self, *_signal_args):
         for control in getattr(self,'currents',[]):control.setMaximum(self.cap.value())
@@ -377,7 +384,7 @@ class IndividualPanel(QWidget):
         if not self.owner.execute_base_mri_load(path):
             return False
         self.timings.reset()
-        self.task=None; self.atlas_record=None; self.target_selected=False; self.stop_target_selection()
+        self.task=None; self.atlas_record=None; self.atlas_selections.clear(); self.target_selected=False; self.stop_target_selection()
         self.populate_regions(); self.owner.individual_task=None
         self.t1.setText(path)
         self.target_label.setText('尚未选择目标位置')
@@ -427,12 +434,23 @@ class IndividualPanel(QWidget):
         self.current_preview_label.setText(f'通道1 ±{self.currents[0].value():g} mA   ·   通道2 ±{self.currents[1].value():g} mA（峰值）')
 
     def update_roi_mode(self, *_signal_args):
-        point=self.roi_mode.currentIndex()==0
+        atlas_id = self.roi_mode.currentData()
+        point = atlas_id is None
         if not point:self.stop_target_selection()
+        self.atlas_record = (self.task or {}).get('atlases', {}).get(atlas_id)
+        if self.atlas_record and not Path(self.atlas_record['atlas_path']).is_file():
+            self.atlas_record = None
+        self.populate_regions()
         self.sphere_panel.setVisible(point)
         self.radius_row.setVisible(point)
         self.atlas_panel.setVisible(not point)
         self.sphere_panel.setEnabled(point and self.task is not None);self.radius.setEnabled(point)
+        if not point:
+            self.update_region_summary(self.selected_regions())
+        elif not self.target_selected:
+            self.target_label.setText('尚未选择目标位置')
+        else:
+            self.target_label.setText('目标位置已设置，可定位、优化或计算手动方案。')
         self.preview_target()
 
     def coordinates_changed(self, *_signal_args):
@@ -469,11 +487,13 @@ class IndividualPanel(QWidget):
         self.tabs.setCurrentIndex(1)
 
     def roi_spec(self):
-        if self.roi_mode.currentIndex()==1:
-            if not self.atlas_record: raise ValueError('请先准备 AAL3 个体脑区图谱。')
+        atlas_id = self.roi_mode.currentData()
+        if atlas_id:
+            if not self.atlas_record: raise ValueError(f'请先准备 {ATLAS_NAMES[atlas_id]} 个体脑区图谱。')
             labels=self.selected_regions()
             if not labels: raise ValueError('请先搜索并勾选希望作用的脑区。')
-            return {'mask':self.atlas_record['atlas_path'],'labels':labels,'atlas_id':'aal3',
+            return {'mask':self.atlas_record['atlas_path'], 'labels':atlas_voxel_labels(self.atlas_record, labels),
+                'region_ids':labels, 'atlas_id':atlas_id,
                 'atlas_version':self.atlas_record['atlas_version'],
                 'region_names':[self.atlas_record['labels'][str(k)] for k in labels]}
         if self.roi_mode.currentIndex() == 0:
@@ -485,7 +505,7 @@ class IndividualPanel(QWidget):
     def task_from_manifest(path):
         path = Path(path).resolve(); m = json.loads(path.read_text(encoding='utf-8')); stages = m['stages']
         return {'task_dir': str(path.parent), 'manifest': str(path), 'padded_t1': stages['padded'], 'prediction_dir': str(path.parent/'prediction'),
-                'tissue_masks': stages['segmentation'], 'electrodes': stages['electrodes'], 't1': m.get('t1', ''), 'atlas':m.get('atlases',{}).get('aal3'), 'timings':m.get('timings',stages.get('preprocessing',{}).get('timings',{}))}
+                'tissue_masks': stages['segmentation'], 'electrodes': stages['electrodes'], 't1': m.get('t1', ''), 'atlases':m.get('atlases',{}), 'timings':m.get('timings',stages.get('preprocessing',{}).get('timings',{}))}
 
     def attach_task(self, task):
         from core.ti import Leadfield
@@ -493,41 +513,50 @@ class IndividualPanel(QWidget):
         if not Path(task['padded_t1']).is_file(): raise ValueError('保存的模型影像不存在，请重新生成模型。')
         changed = self.task is None or self.task['task_dir'] != task['task_dir']; self.task = task
         if changed:
-            self.target_selected = False; self.stop_target_selection(); self.target_label.setText('尚未选择目标位置')
+            self.atlas_selections.clear(); self.target_selected = False; self.stop_target_selection(); self.target_label.setText('尚未选择目标位置')
         if task.get('t1'): self.t1.setText(task['t1'])
-        self.atlas_record=task.get('atlas')
-        if self.atlas_record and not Path(self.atlas_record['atlas_path']).is_file(): self.atlas_record=None
-        self.populate_regions()
         self.task_label.setText('模型已准备好。接下来选择靶区，或使用手动电极方案。')
         if task.get('timings') and not self.timings.records:
             self.timings.restore({key:dict(value,state='cached') for key,value in task['timings'].items()})
         self.task_ready.emit(task); self.set_busy(False); self.update_roi_mode(); self.status.setText('模型已就绪，下一步选择靶区。')
 
     def start_atlas(self, *_signal_args):
-        if not self.task: return
+        atlas_id = self.roi_mode.currentData()
+        if not self.task or not atlas_id: return
         self.run({'action':'atlas','task_dir':self.task['task_dir'],'padded_t1':self.task['padded_t1'],
-            'tissue_masks':self.task['tissue_masks'],'atlas_resources':str(self.atlas_resources)})
+            'tissue_masks':self.task['tissue_masks'],'atlas_resources':str(self.atlas_resources),'atlas_id':atlas_id})
 
     def selected_regions(self):
         return [self.region_list.item(i).data(Qt.ItemDataRole.UserRole) for i in range(self.region_list.count())
             if self.region_list.item(i).checkState()==Qt.CheckState.Checked]
 
     def populate_regions(self):
+        atlas_id = self.roi_mode.currentData()
+        atlas_name = ATLAS_NAMES.get(atlas_id, '')
+        self.atlas_prepare.setText(f'准备 {atlas_name} 脑区图谱')
+        self.region_search.setPlaceholderText('搜索脑区，例如 丘脑底核 / STN' if atlas_id == 'morel' else '搜索脑区，例如 海马 / hippocampus')
         self.region_list.blockSignals(True); self.region_list.clear()
         if self.atlas_record:
-            from core.atlas import region_name
+            selected = self.atlas_selections.get(atlas_id, ())
             for key,name in self.atlas_record['labels'].items():
-                item=QListWidgetItem(region_name(name)+'  '+name); item.setData(Qt.ItemDataRole.UserRole,int(key))
-                item.setFlags(item.flags()|Qt.ItemFlag.ItemIsUserCheckable); item.setCheckState(Qt.CheckState.Unchecked)
-                if self.atlas_record.get('gmwm_counts',{}).get(key,1)==0:
+                translated = region_name(name)
+                item = QListWidgetItem(f'{translated}  {name}' if translated != name else name)
+                item.setData(Qt.ItemDataRole.UserRole, int(key))
+                gmwm = self.atlas_record.get('gmwm_counts', {}).get(key)
+                native = self.atlas_record.get('native_counts', {}).get(key)
+                item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
+                item.setCheckState(Qt.CheckState.Checked if int(key) in selected and gmwm != 0 else Qt.CheckState.Unchecked)
+                if gmwm == 0:
                     item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEnabled); item.setToolTip('当前导联场未覆盖此脑区')
+                elif native is not None and gmwm is not None:
+                    item.setToolTip(f'映射体素 {native} 个，参与计算 {gmwm} 个')
                 self.region_list.addItem(item)
         self.region_list.blockSignals(False)
         ready=self.atlas_record is not None
         self.region_search.setEnabled(ready); self.region_list.setEnabled(ready); self.clear_regions_button.setEnabled(ready)
         self.region_list.setVisible(ready); self.region_search.setVisible(ready); self.clear_regions_button.setVisible(ready)
         self.atlas_prepare.setVisible(not ready)
-        self.atlas_status.setText('AAL3 已映射到您的 MRI，可选择左侧、右侧或多个脑区。' if ready else '首次准备需要一些时间，同一模型会自动复用。')
+        self.atlas_status.setText(f'{atlas_name} 已映射到您的 MRI，可勾选一个或多个脑区。' if ready else '首次准备需要一些时间，同一模型会自动复用。')
         self.filter_regions()
 
     def filter_regions(self, *_signal_args):
@@ -535,12 +564,16 @@ class IndividualPanel(QWidget):
         for i in range(self.region_list.count()):
             item=self.region_list.item(i); item.setHidden(query not in item.text().casefold())
 
+    def update_region_summary(self, labels):
+        names = [region_name(self.atlas_record['labels'][str(k)]) for k in labels]
+        self.target_label.setText('已选靶区：'+'、'.join(names) if labels else '搜索并勾选希望作用的脑区')
+
     def regions_changed(self, *args):
         if not self.atlas_record: return
-        from core.atlas import region_name
-        labels=self.selected_regions(); names=[region_name(self.atlas_record['labels'][str(k)]) for k in labels]
-        self.target_label.setText('已选靶区：'+'、'.join(names) if labels else '搜索并勾选希望作用的脑区')
-        if self.roi_mode.currentIndex()==1:self.owner.preview_atlas_regions(self.atlas_record,labels)
+        labels = self.selected_regions()
+        self.atlas_selections[self.roi_mode.currentData()] = labels
+        self.update_region_summary(labels)
+        self.owner.preview_atlas_regions(self.atlas_record, labels)
 
     def clear_regions(self, *_signal_args):
         self.region_list.blockSignals(True)
@@ -657,7 +690,7 @@ class IndividualPanel(QWidget):
             match = re.search(r'(\d+)/(\d+)',message)
             if match:
                 done,total=map(int,match.groups()); self.progress.setRange(0,total); self.progress.setValue(done); self.status.setText(f'正在寻找合适方案 · {round(100*done/total)}%'); return
-        for token,text in [('AAL3','正在准备个体脑区图谱'),('核对','正在准备 MRI 和模型'),('统一 MRI','正在整理 MRI 影像'),('nnU-Net','正在识别头部组织'),('组织分割完成','影像识别完成'),('清理组织','正在整理头部组织'),
+        for token,text in [('AAL3','正在准备个体脑区图谱'),('Morel','正在准备个体脑区图谱'),('核对','正在准备 MRI 和模型'),('统一 MRI','正在整理 MRI 影像'),('nnU-Net','正在识别头部组织'),('组织分割完成','影像识别完成'),('清理组织','正在整理头部组织'),
                            ('电极放置','正在计算个体电极位置'),('Python affine','正在定位头部标志点'),('完整导联场复算','正在核对候选方案'),('TI 合成','正在生成电场图'),('tES 电场合成','正在生成电场图'),('复用已完成','正在读取已保存的个体模型')]:
             if token in message:
                 if token == '完整导联场复算': self.progress.setRange(0, 0)
@@ -706,7 +739,8 @@ class IndividualPanel(QWidget):
                 if self._action=='inspect': self.offer_existing_model(self._result)
                 elif self._action=='predict': self.attach_task(self._result); self.tabs.setCurrentIndex(1)
                 elif self._action=='atlas':
-                    self.atlas_record=self._result; self.task['atlas']=self._result; self.populate_regions()
+                    self.task.setdefault('atlases', {})[self._result['atlas_id']] = self._result
+                    self.update_roi_mode()
                     self.tabs.setCurrentIndex(1); self.atlas_ready.emit(self._result); self.status.setText('脑区图谱已就绪，请搜索并勾选靶区。')
                 else: self.apply_result(self._result); self.field_ready.emit(self._result); self.status.setText('方案已保存，电场已显示。')
             except Exception as exc: self.show_error('结果暂时无法显示',str(exc))
@@ -740,16 +774,16 @@ class IndividualPanel(QWidget):
             self.radius.setValue(roi['radius_mm']); self.target_selected = True
             self.target_label.setText('已选目标：' + '，'.join(f'{a} {float(v):.1f}' for a,v in zip(('X','Y','Z'),roi['center_ras_mm'])) + ' mm')
             self.stop_target_selection()
-        elif roi.get('mask') and roi.get('atlas_id')=='aal3' and self.atlas_record:
-            self.roi_mode.setCurrentIndex(1); self.region_list.blockSignals(True)
-            for i in range(self.region_list.count()):
-                item=self.region_list.item(i); item.setCheckState(Qt.CheckState.Checked if item.data(Qt.ItemDataRole.UserRole) in roi.get('labels',[]) else Qt.CheckState.Unchecked)
-            self.region_list.blockSignals(False)
-            from core.atlas import region_name
-            self.target_label.setText('已选靶区：'+'、'.join(region_name(self.atlas_record['labels'][str(k)]) for k in self.selected_regions()))
         elif roi.get('mask'):
-            self.roi_mode.setCurrentIndex(1)
-            self.target_label.setText('已载入历史目标区域；重新规划时请点选或选择 AAL3 脑区。')
+            atlas_id = roi.get('atlas_id')
+            record = (self.task or {}).get('atlases', {}).get(atlas_id)
+            matching_record = record and Path(record['atlas_path']).resolve() == Path(roi['mask']).resolve()
+            if atlas_id in ATLAS_NAMES:
+                self.atlas_selections[atlas_id] = roi.get('region_ids', roi.get('labels', [])) if matching_record else []
+                self.roi_mode.setCurrentIndex(self.roi_mode.findData(atlas_id))
+                self.update_roi_mode()
+            if not matching_record:
+                self.target_label.setText('已载入历史目标区域；重新规划时请点选或选择图谱脑区。')
         self.log.appendPlainText(current_description(result,electrode_names(self.models)))
         stats=result.get('statistics',{})
         if 'roi' in stats: self.log.appendPlainText(f"目标区域均值 {stats['roi']['mean_v_m']:.4f} V/m，峰值 {stats['roi']['max_v_m']:.4f} V/m")

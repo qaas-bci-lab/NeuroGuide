@@ -8,7 +8,9 @@ import sys
 import zipfile
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from tools.build_protected import ROOT, RELEASE, digest
+from tools.build_protected import ROOT, digest
+
+RELEASE = 'NeuroGuide-V4.5'
 
 
 def replace_member(archive_path, member, replacement):

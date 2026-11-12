@@ -3,11 +3,11 @@
 import os
 import numpy as np
 import matplotlib.pyplot as plt
+from matplotlib.cm import ScalarMappable
 from PyQt6.QtWidgets import QWidget, QVBoxLayout, QLabel
 from PyQt6.QtCore import pyqtSignal, Qt
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
-from mpl_toolkits.axes_grid1.inset_locator import inset_axes
 
 plt.rcParams["font.sans-serif"] = ["SimHei"]
 plt.rcParams["axes.unicode_minus"] = False
@@ -95,11 +95,12 @@ class MriCanvas(FigureCanvas):
 
     def render_slice(self, data_slice, overlays=None, vmin=None, vmax=None,
                      crosshair=None, aspect=1.0):
-        self.ax.clear()
-        self.ax.axis("off")
         for cb in self.cbars:
             cb.ax.remove()
         self.cbars = []
+        self.fig.subplots_adjust(right=.90)
+        self.ax.clear()
+        self.ax.axis("off")
         self.ax.set_title(self.title, color="#bac3d2", fontsize=11,
                           fontweight="normal", pad=10)
         if data_slice is None:
@@ -110,7 +111,7 @@ class MriCanvas(FigureCanvas):
         self.ax.imshow(img_show, cmap="gray", vmin=vmin, vmax=vmax,
                        origin="lower", interpolation="nearest", aspect=aspect)
         if overlays:
-            for i, ov in enumerate(overlays):
+            for ov in overlays:
                 ov_raw = ov["data"]
                 if ov_raw is None:
                     continue
@@ -133,7 +134,7 @@ class MriCanvas(FigureCanvas):
                     vmin=ov["min"], vmax=ov["max"], origin="lower",
                     interpolation=interp, aspect=aspect)
                 if not ov.get("is_atlas"):
-                    self.add_parallel_colorbar(im, i, ov.get('units','V/m'))
+                    self.add_parallel_colorbar(im, ov.get('units', 'V/m'))
         if crosshair:
             cx, cy = crosshair
             self.ax.axhline(cy, color="#8195b8", linewidth=0.8,
@@ -144,15 +145,16 @@ class MriCanvas(FigureCanvas):
                             edgecolors="black", linewidths=0.5, zorder=10)
         self.draw_idle()
 
-    def add_parallel_colorbar(self, mappable, index, units='V/m'):
-        ax_ins = inset_axes(
-            self.ax, width="5%", height="60%", loc="lower left",
-            bbox_to_anchor=(1.05 + index * 0.12, 0.2, 0.1, 0.6),
-            bbox_transform=self.ax.transAxes, borderpad=0)
-        cb = self.fig.colorbar(mappable, cax=ax_ins)
+    def add_parallel_colorbar(self, image, units='V/m'):
+        index = len(self.cbars)
+        self.fig.subplots_adjust(right=max(.42, .84 - .12 * index))
+        ax_ins = self.ax.inset_axes([1.025 + .14 * index, .20, .038, .60])
+        scale = ScalarMappable(norm=image.norm, cmap=image.cmap)
+        cb = self.fig.colorbar(scale, cax=ax_ins)
         cb.ax.yaxis.set_tick_params(color="white", labelcolor="white",
                                     labelsize=7)
-        cb.outline.set_edgecolor("white")
+        cb.outline.set_edgecolor("#bac3d2")
+        cb.outline.set_linewidth(.5)
         cb.ax.set_title(units,color='#bac3d2',fontsize=7,pad=4)
         self.cbars.append(cb)
 

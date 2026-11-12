@@ -39,9 +39,9 @@ NeuroGuide 面向医生和研究人员，用于根据个体 T1 MRI 建立头部�
 
 完整解压后，双击 `NeuroGuide-V4.6.exe` 启动。请保留解压目录中的全部文件。软件已配备 Python 运行环境、推理依赖和模型资源，可直接使用。
 
-V4.6 的详细步骤见软件文件夹中的 `使用说明.txt`。
+详细步骤见 [医生使用手册](docs/使用说明_V4.6_医生版.txt)，软件文件夹中也附有 `使用说明.txt`。
 
-## V4.6 分发版功能
+## 主要功能
 
 | 功能 | 说明 |
 | --- | --- |
@@ -73,9 +73,9 @@ V4.6 的详细步骤见软件文件夹中的 `使用说明.txt`。
 
 转换在本机完成，原始 DICOM 保留。载入后请浏览完整影像，再开始建模。样本预览仅用于辅助识别序列，影像方向和头部覆盖范围应在主界面核对。更多说明见 [DICOM 导入](docs/dicom_import.md)。
 
-## BrainLFNet 发布说明
+## BrainLFNet 本地依赖
 
-NeuroGuide 的个体建模与导联场推理依赖 BrainLFNet。**相关论文尚未发表，BrainLFNet 的代码、权重和配套资源暂缓公开。** [BrainLFNet 目录](BrainLFNet/README.md) 中保留了简短说明，后续发布安排将在仓库更新。
+NeuroGuide 的个体建模与导联场推理依赖 BrainLFNet。从源码运行完整流程时，需在本地 `BrainLFNet/` 目录中配置代码、权重与配套资源。Git 忽略整个 `BrainLFNet/` 目录。
 
 当前公开部分包括桌面界面、流程管理、DICOM 导入、TI / tES 合成与优化、可视化、报告及构建工具。源码运行完整流程还需配齐 BrainLFNet 和相应运行资源；希望直接使用软件，可下载上方 Windows 分发版。
 
@@ -85,7 +85,7 @@ NeuroGuide 的个体建模与导联场推理依赖 BrainLFNet。**相关论文�
 main.py                 程序入口
 core/                   影像处理、任务管理、TI / tES 计算与缓存
 ui/                     影像工作区、方案设置和结果显示
-BrainLFNet/             模型模块发布说明
+BrainLFNet/             本地模型模块与权重
 tools/                  后台任务、报告与构建工具
 tests/                  回归测试
 assets/branding/        软件 Logo 与版本信息
@@ -112,7 +112,9 @@ py -3.10 -m venv .venv
 
 ### 打包
 
-V4.5 通过 Cython 将项目模块编译为原生扩展，再由 PyInstaller 打包。构建入口为 `tools/build_protected.py`，依赖见 `requirements-build-protected.txt`。构建需要 Windows x64、匹配的 MSVC C++ 工具链及完整运行资源。
+V4.6 通过 Cython 将项目模块编译为原生扩展，再由 PyInstaller 打包。构建入口为 `tools/build_protected.py`，依赖见 `requirements-build-protected.txt`。构建需要 Windows x64、匹配的 MSVC C++ 工具链及完整运行资源。
+
+用待发布的 CUDA Python 运行 `tools/prepare_protected_env.py`，再在 x64 MSVC 开发者命令行中用 `build/protected_V4_6/venv/Scripts/python.exe` 运行构建脚本。完成后使用 `tools/test_protected.py`、`tools/validate_protected.py` 和 `tools/archive_protected.py` 测试、验收和生成 ZIP。
 
 原生编译用于提高代码保护程度，专业逆向仍有可能；模型权重按原有格式分发。第三方组件的许可和版权声明应随软件保留。
 

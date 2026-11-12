@@ -1,4 +1,11 @@
 """Shared desktop palette and control hierarchy for the imaging workspace."""
+from pathlib import Path
+import sys
+
+
+_root = Path(getattr(sys, '_MEIPASS', Path(__file__).resolve().parents[1]))
+_combo_arrow = (_root / 'assets/branding/combo_arrow.svg').as_posix()
+
 WINDOW_STYLE = '''
 QMainWindow, QDialog { background: #15171c; }
 QWidget { color: #e1e5ed; font-family: "Microsoft YaHei UI", "Microsoft YaHei", "Segoe UI"; font-size: 12px; }
@@ -25,7 +32,10 @@ QPlainTextEdit { background: #171b22; color: #bac6d8; border: 1px solid #3b424f;
 QListWidget::item { padding: 4px 7px; border-radius: 3px; }
 QListWidget::item:selected { background: #2a4165; }
 QComboBox, QLineEdit, QSpinBox, QDoubleSpinBox { background: #171a21; border: 1px solid #414754; border-radius: 5px; padding: 5px 7px; }
-QComboBox::drop-down { border: none; }
+QComboBox { padding-right: 27px; }
+QComboBox::drop-down { subcontrol-origin: border; subcontrol-position: top right; width: 24px; border: none; }
+QComboBox::down-arrow { image: url("COMBO_ARROW"); width: 10px; height: 7px; }
+QComboBox:disabled { color: #69717f; }
 QComboBox QAbstractItemView { background: #1c1f26; color: #e1e5ed; selection-background-color: #2a4165; }
 QSlider::groove:horizontal { background: #3e444f; height: 4px; border-radius: 2px; }
 QSlider::handle:horizontal { background: #78a5f0; width: 13px; height: 13px; margin: -5px 0; border-radius: 6px; }
@@ -36,7 +46,7 @@ QFrame#fieldInfo { background: #1c1f26; border: 1px solid #353943; border-radius
 QProgressBar { background: #303641; border: none; border-radius: 3px; height: 6px; }
 QProgressBar::chunk { background: #598ce8; border-radius: 3px; }
 QStatusBar { background: #1c1f26; color: #c2cad6; }
-'''
+'''.replace('COMBO_ARROW', _combo_arrow)
 
 PANEL_STYLE = '''
 QWidget#individualPanel { background: transparent; }

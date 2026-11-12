@@ -1,4 +1,4 @@
-"""AAL3 labels and independently cached template-to-native ANTs registration."""
+"""Atlas labels and independently cached template-to-native ANTs registration."""
 from __future__ import annotations
 import hashlib
 import json
@@ -7,6 +7,8 @@ import time
 from pathlib import Path
 import nibabel as nib
 import numpy as np
+
+ATLAS_NAMES = {'aal3': 'AAL3', 'morel': 'Morel'}
 
 TRANSLATIONS = {
     'Precentral':'中央前回','Postcentral':'中央后回','Hippocampus':'海马','ParaHippocampal':'海马旁回',
@@ -24,6 +26,46 @@ TRANSLATIONS = {
     'SN_pr':'黑质网状部','VTA':'腹侧被盖区','Red_N':'红核','LC':'蓝斑','Raphe_D':'中缝背核','Raphe_M':'中缝正中核',
     'ACC_sub':'膝下前扣带','ACC_pre':'膝前前扣带','ACC_sup':'膝上前扣带',
     'OFCmed':'内侧眶额皮层','OFCant':'前眶额皮层','OFCpost':'后眶额皮层','OFClat':'外侧眶额皮层',
+    # Morel v1.0 abbreviations, with anatomical subdivisions kept distinct.
+    'AD': '丘脑前背侧核',
+    'AM': '丘脑前内侧核',
+    'AV': '丘脑前腹侧核',
+    'CL': '丘脑中央外侧核',
+    'CM': '丘脑中央中核',
+    'CeM': '丘脑中央内侧核',
+    'Hb': '缰核',
+    'LD': '丘脑外侧背核',
+    'LGNmc': '外侧膝状体大细胞层',
+    'LGNpc': '外侧膝状体小细胞层',
+    'LP': '丘脑外侧后核',
+    'Li': '丘脑界限核',
+    'MDmc': '丘脑内侧背核大细胞部',
+    'MDpc': '丘脑内侧背核小细胞部',
+    'MGN': '内侧膝状体核',
+    'MV': '丘脑内侧腹核',
+    'Pf': '丘脑束旁核',
+    'Po': '丘脑后核',
+    'PuA': '丘脑枕前部',
+    'PuI': '丘脑枕下部',
+    'PuL': '丘脑枕外侧部',
+    'PuM': '丘脑枕内侧部',
+    'Pv': '丘脑室旁核',
+    'RN': '红核',
+    'SG': '丘脑膝上核',
+    'STN': '丘脑底核',
+    'VAmc': '丘脑腹前核大细胞部',
+    'VApc': '丘脑腹前核小细胞部',
+    'VLa': '丘脑腹外侧前核',
+    'VLpd': '丘脑腹外侧后核背侧部',
+    'VLpv': '丘脑腹外侧后核腹侧部',
+    'VM': '丘脑腹内侧核',
+    'VPI': '丘脑腹后下核',
+    'VPLa': '丘脑腹后外侧核前部',
+    'VPLp': '丘脑腹后外侧核后部',
+    'VPM': '丘脑腹后内侧核',
+    'mtt': '乳头丘脑束',
+    'sPf': '丘脑束旁下核',
+    'thalamus_body': '丘脑主体',
 }
 
 def region_name(name):
@@ -35,8 +77,15 @@ def region_name(name):
     if translated is None and base.startswith('Thal_'): translated = '丘脑 ' + base[5:]
     return side + translated if translated else name
 
-def load_labels(resources):
-    return {int(k):v for k,v in json.loads((Path(resources)/'AAL3_labels.json').read_text(encoding='utf-8')).items()}
+def load_labels(resources, atlas_id='aal3'):
+    path = Path(resources) / (ATLAS_NAMES[atlas_id] + '_labels.json')
+    return {int(k): v for k, v in json.loads(path.read_text(encoding='utf-8')).items()}
+
+
+def atlas_voxel_labels(record, region_ids):
+    memberships = record.get('voxel_labels', {})
+    return sorted({value for region in region_ids for value in memberships.get(str(region), [region])})
+
 
 def file_hash(path):
     digest = hashlib.sha256()
@@ -130,6 +179,18 @@ def subject_to_mni_lps(matrix):
     return ras_to_lps@matrix[:3,:3]@ras_to_lps,ras_to_lps@matrix[:3,3]
 
 
+def save_atlas_record(task, record):
+    from core.individual_pipeline import save_json
+
+    manifest_path = task / 'manifest.json'
+    if manifest_path.is_file():
+        manifest = json.loads(manifest_path.read_text(encoding='utf-8'))
+        atlases = manifest.setdefault('atlases', {})
+        if atlases.get(record['atlas_id']) != record:
+            atlases[record['atlas_id']] = record
+            save_json(manifest_path, manifest)
+
+
 def register_atlas(config, progress=print):
     # A dedicated worker keeps ITK and its native library out of Qt/VTK.
     os.environ['ITK_GLOBAL_DEFAULT_NUMBER_OF_THREADS'] = '1'
@@ -140,25 +201,44 @@ def register_atlas(config, progress=print):
     resources = Path(config['atlas_resources']).resolve()
     reference_path = Path(config['padded_t1']).resolve()
     tissue_path = Path(config['tissue_masks']).resolve()
-    atlas_path, template_path = resources/'AAL3v1_1mm.nii.gz', resources/'single_subj_T1.nii.gz'
-    labels = load_labels(resources)
-    paths = [reference_path,tissue_path,atlas_path,template_path,resources/'AAL3_labels.json']
-    prior=preprocessing_affine(task,reference_path)
+    atlas_id = config.get('atlas_id', 'aal3')
+    display_name = ATLAS_NAMES[atlas_id]
+    template_mask = None
+    voxel_labels_path = None
+    if atlas_id == 'aal3':
+        atlas_version = 'AAL3v1'
+        atlas_path, template_path = resources/'AAL3v1_1mm.nii.gz', resources/'single_subj_T1.nii.gz'
+        prior = preprocessing_affine(task, reference_path)
+    else:
+        atlas_version = '1.0'
+        atlas_path = resources/'Morel_1mm.nii.gz'
+        template_path = resources/'Morel_T1_1mm.nii.gz'
+        template_mask = resources/'Morel_template_mask.nii.gz'
+        voxel_labels_path = resources/'Morel_voxel_labels.json'
+        prior = None
+    labels = load_labels(resources, atlas_id)
+    voxel_labels = json.loads(voxel_labels_path.read_text(encoding='utf-8')) if voxel_labels_path else {}
+    membership_record = {'voxel_labels': voxel_labels}
+    valid_codes = atlas_voxel_labels(membership_record, labels)
+    paths = [reference_path, tissue_path, atlas_path, template_path, resources/(display_name + '_labels.json')]
+    if template_mask is not None:
+        paths.extend((template_mask, voxel_labels_path))
     if prior is not None:paths.append(prior[0])
-    progress('正在核对 AAL3 图谱与个体 MRI')
+    progress(f'正在核对 {display_name} 图谱与个体 MRI')
     signature = {'version':4,'initialization':'subject_to_mni_probability_template' if prior is not None else 'center_of_mass',
         'native_geometry':'full_affine_nibabel_ants_lps','registration_grid':'world_aligned_2mm','method':'ANTs SyNRA','ants_version':ants.__version__, 'seed':20261013,'threads':1,
         'registration_spacing_mm':2.0,'syn_iterations':[60,40,20],'aff_iterations':[1000,500,250,0],
         'interpolator':'nearestNeighbor','hashes':{p.name:file_hash(p) for p in paths}}
     key = hashlib.sha256(json.dumps(signature,sort_keys=True).encode()).hexdigest()
-    output = task/'atlas'/('aal3_'+key[:12]); output.mkdir(parents=True,exist_ok=True)
-    record_path = output/'registration.json'; native_path = output/'AAL3_native.nii.gz'
+    output = task/'atlas'/(atlas_id + '_' + key[:12]); output.mkdir(parents=True,exist_ok=True)
+    record_path = output/'registration.json'; native_path = output/(display_name + '_native.nii.gz')
     reference = nib.load(reference_path)
     if record_path.is_file() and native_path.is_file():
         cached = json.loads(record_path.read_text(encoding='utf-8'))
         if cached.get('fingerprint') == key:
-            validate_labels(nib.load(native_path),reference,labels)
-            progress('复用已完成的 AAL3 个体图谱'); return cached
+            validate_labels(nib.load(native_path), reference, valid_codes)
+            save_atlas_record(task, cached)
+            progress(f'复用已完成的 {display_name} 个体图谱'); return cached
     started = time.monotonic()
     tissue_img = nib.load(tissue_path)
     if tissue_img.shape != reference.shape or not np.allclose(tissue_img.affine,reference.affine,atol=1e-4):
@@ -167,16 +247,17 @@ def register_atlas(config, progress=print):
     if np.count_nonzero(brain) < 1000: raise ValueError('个体 MRI 的脑组织范围不足，无法配准图谱。')
     fixed_mask_path = output/'brain_mask.nii.gz'
     nib.save(nib.Nifti1Image(brain.astype(np.uint8),reference.affine),fixed_mask_path)
-    atlas_img = nib.load(atlas_path); template_img = nib.load(template_path)
-    atlas_on_template = resample_from_to(atlas_img,template_img,order=0).get_fdata()
-    moving_mask = binary_dilation(binary_fill_holes(atlas_on_template>0),iterations=1)
-    moving_mask_path = output/'template_brain_mask.nii.gz'
-    nib.save(nib.Nifti1Image(moving_mask.astype(np.uint8),template_img.affine),moving_mask_path)
+    template_img = nib.load(template_path)
+    if template_mask is None:
+        atlas_on_template = resample_from_to(nib.load(atlas_path),template_img,order=0).get_fdata()
+        moving_mask = binary_dilation(binary_fill_holes(atlas_on_template>0),iterations=1)
+        template_mask = output/'template_brain_mask.nii.gz'
+        nib.save(nib.Nifti1Image(moving_mask.astype(np.uint8),template_img.affine),template_mask)
     fixed_full = nifti_to_ants(reference); moving_full = ants.image_read(str(template_path))
     # Optimizers and smoothing use an orthogonal world grid, even when the
     # training-compatible native padded header contains legacy shear.
     fixed,fixed_mask=atlas_working_grid(reference,brain)
-    moving_mask_ants = ants.image_read(str(moving_mask_path))
+    moving_mask_ants = ants.image_read(str(template_mask))
     moving = ants.iMath(moving_full * moving_mask_ants,'Normalize')
     fixed = ants.iMath(fixed * fixed_mask,'Normalize')
     initial_options={}
@@ -185,8 +266,8 @@ def register_atlas(config, progress=print):
         initial=ants.create_ants_transform(transform_type='AffineTransform',dimension=3,matrix=linear,offset=offset)
         initial_path=output/'subject_to_mni_initial.mat';ants.write_transform(initial,str(initial_path))
         initial_options['initial_transform']=[str(initial_path)]
-        progress('复用电极定位阶段的个体仿射配准，初始化 AAL3 脑区映射')
-    progress('正在将 AAL3 脑区映射到个体 MRI，首次处理需要一些时间')
+        progress(f'复用电极定位阶段的个体仿射配准，初始化 {display_name} 脑区映射')
+    progress(f'正在将 {display_name} 脑区映射到个体 MRI，首次处理需要一些时间')
     transform = ants.registration(fixed=fixed,moving=moving,type_of_transform='SyNRA',
         outprefix=str(output/'template_to_native_'), mask=fixed_mask,moving_mask=moving_mask_ants,
         mask_all_stages=True, aff_iterations=(1000,500,250,0),aff_shrink_factors=(6,4,2,1),
@@ -195,8 +276,7 @@ def register_atlas(config, progress=print):
     progress('正在生成个体脑区图谱并核对标签')
     warped = ants.apply_transforms(fixed=fixed_full,moving=ants.image_read(str(atlas_path)),
         transformlist=transform['fwdtransforms'],interpolator='nearestNeighbor',singleprecision=True)
-    temporary = output/'AAL3_native_pending.nii.gz'; nib.save(ants_on_reference(warped,reference),temporary)
-    data = validate_labels(nib.load(temporary),reference,labels)
+    data = validate_labels(ants_on_reference(warped, reference), reference, valid_codes)
     covered = data>0
     overlap = float(np.count_nonzero(covered & brain)/max(1,np.count_nonzero(covered)))
     if overlap < .60: raise ValueError('图谱与脑组织的重合不足，请核对 MRI 和组织分割。')
@@ -208,20 +288,21 @@ def register_atlas(config, progress=print):
     corr = float(np.corrcoef(fixed_values,moving_values)[0,1])
     if not np.isfinite(corr) or corr < .15: raise ValueError('图谱配准结果与 MRI 不匹配，请核对影像。')
     nib.save(nib.Nifti1Image(data,reference.affine),native_path)
-    histogram = np.bincount(data[np.isin(tissue_img.get_fdata(),[1,2])],minlength=max(labels)+1)
-    counts = {str(k):int(histogram[k]) for k in labels}
-    result = {'atlas_path':str(native_path),'atlas_id':'aal3','atlas_version':'AAL3v1','display_name':'AAL3',
+    histogram = np.bincount(data[np.isin(tissue_img.get_fdata(),[1,2])],minlength=max(valid_codes)+1)
+    native_histogram = np.bincount(data.ravel(), minlength=max(valid_codes)+1)
+    codes_by_region = {str(k): atlas_voxel_labels(membership_record, [k]) for k in labels}
+    counts = {k: int(histogram[codes].sum()) for k, codes in codes_by_region.items()}
+    result = {'atlas_path':str(native_path),'atlas_id':atlas_id,'atlas_version':atlas_version,'display_name':display_name,
         'task_dir':str(task),'padded_t1':str(reference_path),'registration_path':str(record_path),
         'labels':{str(k):v for k,v in labels.items()},'gmwm_counts':counts,'fingerprint':key,'signature':signature,
+        'native_counts':{k: int(native_histogram[codes].sum()) for k, codes in codes_by_region.items()},
         'fwdtransforms':transform['fwdtransforms'],'warped_template':str(preview),
         'quality':{'atlas_brain_overlap':overlap,'template_correlation':corr,'nonempty_regions':int(np.count_nonzero(list(counts.values()))),
             'elapsed_seconds':round(time.monotonic()-started,2)}}
+    if voxel_labels:
+        result['voxel_labels'] = voxel_labels
     record_temp = record_path.with_suffix('.tmp')
     record_temp.write_text(json.dumps(result,ensure_ascii=False,indent=2),encoding='utf-8'); record_temp.replace(record_path)
-    manifest_path = task/'manifest.json'
-    if manifest_path.is_file():
-        manifest=json.loads(manifest_path.read_text(encoding='utf-8')); manifest.setdefault('atlases',{})['aal3']=result
-        manifest_temp = manifest_path.with_suffix('.tmp')
-        manifest_temp.write_text(json.dumps(manifest,ensure_ascii=False,indent=2),encoding='utf-8'); manifest_temp.replace(manifest_path)
-    progress('个体 AAL3 图谱已准备好，可以按脑区选择目标')
+    save_atlas_record(task, result)
+    progress(f'个体 {display_name} 图谱已准备好，可以按脑区选择目标')
     return result

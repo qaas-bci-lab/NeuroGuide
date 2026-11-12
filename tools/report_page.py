@@ -153,6 +153,8 @@ def generate_report(engine,base_path,disease,target,output_path=None,canvases=No
         center=report_center(engine,stimulation,info.get('slice_indices'),round_to_voxel=False)
         xyz=engine.affine @ np.r_[center,1] if engine.affine is not None else np.r_[center,1]
         roi=stimulation.get('roi') or {};roi_name='、'.join(roi.get('region_names',[])) or target or '当前靶区'
+        if roi.get('atlas_id') == 'morel':
+            roi_name = 'Morel · ' + roi_name
         heading('ROI 场强（峰值幅度）',height-251)
         paragraph(escape(roi_name)+f' · 中心 ({xyz[0]:.1f}, {xyz[1]:.1f}, {xyz[2]:.1f}) mm',margin,height-274,usable,19)
         stats=stimulation.get('statistics',{}).get('roi')
@@ -177,6 +179,8 @@ def generate_report(engine,base_path,disease,target,output_path=None,canvases=No
             pdf.drawImage(ImageReader(image),margin+axis*(column+8),61,column,230,preserveAspectRatio=True,anchor='c',mask='auto')
         paragraph(escape(stimulation_note(stimulation)),margin,29,usable,22,size=9)
         pdf.setFont(font,7);pdf.setFillColor(HexColor('#8a95a5'));pdf.drawRightString(width-margin,14,time.strftime('%Y-%m-%d %H:%M'))
+        if roi.get('atlas_id') == 'morel':
+            pdf.drawString(margin, 14, 'Morel · Jakab et al. (2012), 10.3174/ajnr.A3140 · Krauth et al. (2010), 10.1016/j.neuroimage.2009.10.042')
         pdf.showPage();pdf.save()
         return True,str(output_path)
     except Exception as exc:

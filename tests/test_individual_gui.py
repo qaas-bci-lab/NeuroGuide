@@ -133,10 +133,61 @@ class GuiTests(unittest.TestCase):
             self.viewer.locate_roi({'mask':str(path),'labels':[41]},str(t1))
             self.assertEqual([self.viewer.sliders[a].value() for a in ('X','Y','Z')],[2,2,2])
 
+    def test_switching_atlases_keeps_selections_and_overlapping_voxels(self):
+        panel = self.viewer.individual_dialog
+        with tempfile.TemporaryDirectory() as directory:
+            prediction, t1 = fixture(directory)
+            self.viewer.execute_base_mri_load(str(t1))
+            image = nib.load(t1)
+            voxels = np.zeros(image.shape, np.int16)
+            voxels[1, 2, 1] = 1
+            voxels[2, 2, 1] = 3
+            mask = Path(directory) / 'atlas.nii.gz'
+            nib.save(nib.Nifti1Image(voxels, image.affine), mask)
+            common = {'atlas_path': str(mask), 'atlas_version': '1.0'}
+            panel.task = {'prediction_dir': str(prediction), 'padded_t1': str(t1), 'task_dir': directory,
+                          'atlases': {
+                              'aal3': dict(common, display_name='AAL3', labels={'1': 'Hippocampus_L'}),
+                              'morel': dict(common, display_name='Morel', labels={'1': 'STN_L', '2': 'VLpv_R'},
+                                            voxel_labels={'1': [1, 3], '2': [2, 3]})}}
+            panel.update_roi_mode()
+            panel.region_list.item(0).setCheckState(Qt.CheckState.Checked)
+            panel.roi_mode.setCurrentIndex(panel.roi_mode.findData('morel'))
+            self.assertEqual(panel.selected_regions(), [])
+            for query in ('丘脑腹外侧后核腹侧部', 'vlpv_r'):
+                panel.region_search.setText(query)
+                self.assertFalse(panel.region_list.item(1).isHidden())
+                self.assertTrue(panel.region_list.item(0).isHidden())
+            panel.region_search.setText('丘脑底核')
+            self.assertFalse(panel.region_list.item(0).isHidden())
+            panel.region_list.item(0).setCheckState(Qt.CheckState.Checked)
+            roi = panel.roi_spec()
+            self.assertEqual((roi['atlas_id'], roi['region_ids'], roi['labels']), ('morel', [1], [1, 3]))
+            self.assertEqual(self.viewer.engine.overlays[-1]['data'].sum(), 2)
+            panel.roi_mode.setCurrentIndex(panel.roi_mode.findData('aal3'))
+            self.assertEqual(panel.roi_spec()['labels'], [1])
+            panel.roi_mode.setCurrentIndex(panel.roi_mode.findData('morel'))
+            self.assertEqual(panel.roi_spec(), roi)
+
+    def test_colorbar_tracks_field_scale_at_full_opacity(self):
+        canvas = ui.canvas.MriCanvas()
+        values = np.linspace(0, 2, 144).reshape(12, 12)
+        overlay = {'data': values, 'cmap': 'jet', 'alpha': .35, 'min': .2, 'max': 1.5}
+        for cmap in ('jet', 'viridis'):
+            canvas.render_slice(values, [dict(overlay, cmap=cmap)])
+            canvas.draw()
+            bar, = canvas.cbars
+            self.assertEqual(bar.cmap.name, cmap)
+            self.assertEqual((bar.vmin, bar.vmax), (.2, 1.5))
+            self.assertGreater(bar.ax.bbox.width, 8)
+            self.assertTrue(np.all(bar.solids.get_facecolors()[:, 3] == 1))
+        canvas.render_slice(values)
+        self.assertEqual(canvas.ax.child_axes, [])
+
     def test_frequency_free_ui_opaque_fields_and_roi_result_summary(self):
         self.viewer.on_individual_mode_clicked();panel=self.viewer.individual_dialog
-        self.assertEqual(panel.roi_mode.count(),2)
-        self.assertEqual([panel.roi_mode.itemText(i) for i in range(2)],['在 MRI 上点选','按 AAL3 脑区选择'])
+        self.assertEqual([panel.roi_mode.itemText(i) for i in range(panel.roi_mode.count())],
+                         ['在 MRI 上点选', '按 AAL3 脑区选择', '按 Morel 脑区选择'])
         self.assertFalse(hasattr(panel,'frequencies'));self.assertFalse(hasattr(panel,'roi_mask'))
         self.assertEqual(self.viewer.alpha_slider.value(),100)
         with tempfile.TemporaryDirectory() as directory:
@@ -236,8 +287,8 @@ class GuiTests(unittest.TestCase):
             prediction,t1=fixture(directory); image=nib.load(t1)
             labels=np.full(image.shape,41,dtype=np.int16); labels[3:]=42
             atlas_path=Path(directory)/'AAL3_native.nii.gz'; nib.save(nib.Nifti1Image(labels,image.affine),atlas_path)
-            record={'atlas_path':str(atlas_path),'atlas_version':'AAL3v1','labels':{'41':'Hippocampus_L','42':'Hippocampus_R'},'gmwm_counts':{'41':60,'42':60}}
-            task={'prediction_dir':str(prediction),'task_dir':directory,'padded_t1':str(t1),'tissue_masks':str(t1),'atlas':record}
+            record={'atlas_path':str(atlas_path),'atlas_version':'AAL3v1','display_name':'AAL3','labels':{'41':'Hippocampus_L','42':'Hippocampus_R'},'gmwm_counts':{'41':60,'42':60}}
+            task={'prediction_dir':str(prediction),'task_dir':directory,'padded_t1':str(t1),'tissue_masks':str(t1),'atlases':{'aal3':record}}
             panel.attach_task(task); panel.tabs.setCurrentIndex(1)
             self.assertEqual(panel.roi_mode.currentIndex(),1)
             panel.region_search.setText('海马')
@@ -248,6 +299,7 @@ class GuiTests(unittest.TestCase):
             panel.run=Mock(); panel.start_optimization()
             self.assertEqual(panel.run.call_args.args[0]['roi']['mask'],str(atlas_path))
             result={'pairs':[[1,2],[3,72]],'currents_peak_ma':[1.,1.],'frequencies_hz':[2000,2010],'roi':roi}
+            roi.pop('region_ids')  # Reports saved before V4.6 store AAL3 IDs in labels.
             panel.clear_regions(); panel.apply_result(result)
             self.assertEqual(panel.selected_regions(),[41,42])
             panel.clear_regions()
