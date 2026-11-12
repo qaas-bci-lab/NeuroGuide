@@ -2,7 +2,7 @@
   <img src="assets/branding/neuroguide_mark.png" alt="NeuroGuide Logo" width="160">
   <h1>NeuroGuide</h1>
   <p>个体 MRI 电场仿真与 TI / tES 方案规划</p>
-  <p>Windows 桌面软件 · V4.5</p>
+  <p>Windows 分发版 · V4.6</p>
 </div>
 
 NeuroGuide 面向医生和研究人员，用于根据个体 T1 MRI 建立头部电场模型，规划 TI / tES 电极方案，并查看、比较仿真结果。影像导入、靶区选择、电场计算和报告导出均可在软件中完成。
@@ -29,25 +29,25 @@ NeuroGuide 面向医生和研究人员，用于根据个体 T1 MRI 建立头部�
 
 ![NeuroGuide tES 多电极方案与电场显示](docs/screenshots/tes-workspace-v4.5.png)
 
-*截图用于展示软件功能，图中的电极、电流和统计值为示例方案。*
+*截图来自 V4.5，图中的电极、电流和统计值为示例方案。*
 
 ## 下载与使用
 
-**[夸克网盘下载 Windows 版](https://pan.quark.cn/s/7c774f15b867)**
+**[夸克网盘下载 NeuroGuide V4.6（Windows）](https://pan.quark.cn/s/9562c10230a2)**
 
 下载密码请联系 **[xuxie@zju.edu.cn](mailto:xuxie@zju.edu.cn)** 获取。
 
-完整解压后，双击 `NeuroGuide-V4.5.exe` 启动。请保留解压目录中的全部文件。软件已配备 Python 运行环境、推理依赖和模型资源，可直接使用。
+完整解压后，双击 `NeuroGuide-V4.6.exe` 启动。请保留解压目录中的全部文件。软件已配备 Python 运行环境、推理依赖和模型资源，可直接使用。
 
-详细步骤见 [医生使用手册](docs/使用说明_V4.5_医生版.txt)，软件文件夹中也附有 `使用说明.txt`。
+V4.6 的详细步骤见软件文件夹中的 `使用说明.txt`。
 
-## 主要功能
+## V4.6 分发版功能
 
 | 功能 | 说明 |
 | --- | --- |
 | 影像导入 | 读取 `.nii`、`.nii.gz` 格式的 T1 MRI，或选择 DICOM 序列进行转换 |
 | 个体建模 | 完成组织处理、电极定位和导联场计算，支持已有模型复用 |
-| 靶区选择 | 在 MRI 上点选、输入个体 RAS 坐标，或通过 AAL3 图谱选择一个或多个脑区 |
+| 靶区选择 | 在 MRI 上点选、输入个体 RAS 坐标，或在 AAL3、Morel 图谱中选择脑区。Morel 包含双侧丘脑底核（STN），支持按中文名称或原缩写搜索 |
 | TI 方案规划 | 自动搜索双电极对方案，也可手动设置电极对及各通道电流 |
 | tES 方案规划 | 自动搜索多电极方案，支持逐电极电流设置、电流平衡及约束检查 |
 | 电场显示 | 查看三方向 MRI 切片、2.5D 切面、电场分布、靶区统计和电极示意图 |
